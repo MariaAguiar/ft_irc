@@ -18,14 +18,3 @@ To automatically save a file on save, add the following to your vscode settings 
     "editor.formatOnSave": true
 }
 ```
-<<<<<<< Updated upstream
-### Especify clang-format location
-This extension will attempt to find clang-format on your PATH. Alternatively, the clang-format executable can be specified in your vscode settings.json file:
-```json
-{
-    "clang-format.executable": "${workspaceRoot}"
-}
-
-```
-=======
->>>>>>> Stashed changes
