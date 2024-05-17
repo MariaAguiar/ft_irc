@@ -99,91 +99,87 @@ static bool isValidArg( std::string str ) {
   return 1;
 }
 
-void Server::handleClient( int fd )
+std::string Server::processMsg( int fd, std::string msg, std::vector<int> &recipients )
 {
-    char buffer[513];
-    int valread;
+    std::string resp;
     size_t start = 0;
-    std::string message = "";
+    std::string message;
     static std::string pass, nick, user;
 
-    while ((valread = read(fd, buffer, 512)) > 0) {
-            buffer[valread] = '\0';
-            valread--;
-            while (valread > 0 && (buffer[valread] == '\n' || buffer[valread] == '\r'))
-            {
-                buffer[valread] = '\0';
-                valread--;
-            }
-            std::string msg(buffer);
-            if (msg.find_first_of("\n\r", start) != std::string::npos)
-              message = msg.substr(start, msg.find_first_of("\n\r\0", start));
+    if (!msg.empty() && msg.find_first_of("\n\r", start) != std::string::npos)
+      message = msg.substr(start, msg.find_first_of("\n\r", start));
+    else
+      message = msg;
+    while (!message.empty())
+    {
+        if (recipients.empty())
+          recipients.push_back(fd);
+        if (message.length() > 4 && message.compare(0, 4, "PASS") == 0)
+        {
+            if (isValidArg(message.substr(5, message.find_first_of("\n\r\0", 5))))
+                pass = message.substr(5, message.find_first_of("\n\r\0", 5));
             else
-              message = msg;
-            while (message.length() > 0)
+                resp = "Pass contains invalid characters\n\0";
+        }
+        else if (message.length() > 4 && message.compare(0, 4, "NICK") == 0)
+        {
+            for (std::map<int, User *>::iterator it = _users.begin(); it != _users.end(); it++)
             {
-                if (message.length() > 4 && message.compare(0, 4, "PASS") == 0)
+                if (it->second && it->second->getNick() == message.substr(5) && it->first != fd)
                 {
-                    if (isValidArg(message.substr(5, message.find_first_of("\n\r\0", 5))))
-                        pass = message.substr(5, message.find_first_of("\n\r\0", 5));
-                    else
-                        std::cout << "Pass contains invalid characters" << std::endl;
-                }
-                else if (message.length() > 4 && message.compare(0, 4, "NICK") == 0)
-                {
-                    for (std::map<int, User *>::iterator it = _users.begin(); it != _users.end(); it++)
-                    {
-                        if (it->second && it->second->getNick() == message.substr(5) && it->first != fd)
-                        {
-                            std::cout << "Nick already taken" << std::endl;
-                            std::memset(buffer, '\0', sizeof(buffer));
-                            return ;
-                        }
-                    }
-                    if (isValidArg(message.substr(5, message.find_first_of("\n\r\0", 5) - 5)))
-                        nick = message.substr(5, message.find_first_of("\n\r\0", 5) - 5);
-                    else
-                        std::cout << "Nick contains invalid characters" << std::endl;
-                }
-                else if (message.length() > 4 && message.compare(0, 4, "USER") == 0)
-                {
-                    for (std::map<int, User *>::iterator it = _users.begin(); it != _users.end(); it++)
-                    {
-                        if (it->second && it->second->getName() == message.substr(5) && it->first != fd)
-                        {
-                            std::cout << "User already taken" << std::endl;
-                            std::memset(buffer, '\0', sizeof(buffer));
-                            return ;
-                        }
-                    }
-                    if (isValidArg(message.substr(5, message.find_first_of(" \n\r\0", 5) - 5)))
-                        user = message.substr(5, message.find_first_of(" \n\r\0", 5) - 5);
-                    else
-                        std::cout << "User contains invalid characters" << std::endl;
-                }
-                else if (_users[fd])
-                    std::cout << message << std::endl;
-                if (!_users[fd] && pass == _password && !nick.empty() && !user.empty())
-                {
-                    _users[fd] = new User(user, nick);
-                    pass.clear();
                     nick.clear();
-                    user.clear();
+                    resp = "Nick already taken\n\0";
+                    return resp;
                 }
-                start = msg.find_first_of("\n\r\0", start);
-                while (start < msg.size() && (msg[start] == '\n' || msg[start] == '\r'))
-                    start++;
-                if (start < msg.size() && msg.find_first_of("\n\r", start) != std::string::npos)
-                    message = msg.substr(start, msg.find_first_of("\n\r", start) - start);
-                else
-                    message = "";
             }
-            std::memset(buffer, '\0', sizeof(buffer));
-            msg = "";
-            msg.clear();
+            if (isValidArg(message.substr(5, message.find_first_of("\n\r\0", 5) - 5)))
+                nick = message.substr(5, message.find_first_of("\n\r\0", 5) - 5);
+            else
+                resp = "Nick contains invalid characters\n\0";
+        }
+        else if (message.length() > 4 && message.compare(0, 4, "USER") == 0)
+        {
+            for (std::map<int, User *>::iterator it = _users.begin(); it != _users.end(); it++)
+            {
+                if (it->second && it->second->getName() == message.substr(5) && it->first != fd)
+                {
+                    user.clear();
+                    resp = "User already taken\n\0";
+                    return resp;
+                }
+            }
+            if (isValidArg(message.substr(5, message.find_first_of(" \n\r\0", 5) - 5)))
+                user = message.substr(5, message.find_first_of(" \n\r\0", 5) - 5);
+            else
+                resp = "User contains invalid characters\n\0";
+        }
+        else if (_users[fd])
+        {
+            recipients.clear();
+            for (int i = 0; i < (int)_pfds.size(); i++)
+            {
+              if (_pfds[i].fd != fd)
+                recipients.push_back(_pfds[i].fd);
+            }
+            resp = message + "\n\0";
+        }
+        if (!_users[fd] && pass == _password && !nick.empty() && !user.empty())
+        {
+            _users[fd] = new User(user, nick);
+            pass.clear();
+            nick.clear();
+            user.clear();
+            resp = "Successfully logged in!\n\0";
+        }
+        start = msg.find_first_of("\n\r\0", start);
+        while (start < msg.size() && (msg[start] == '\n' || msg[start] == '\r'))
+            start++;
+        if (start < msg.size() && msg.find_first_of("\n\r", start) != std::string::npos)
+            message = msg.substr(start, msg.find_first_of("\n\r", start) - start);
+        else
+          break ;
     }
-  }
-  // close(fd);
+    return resp;
 }
 
 void Server::listeningLoop( void ) {
@@ -191,7 +187,8 @@ void Server::listeningLoop( void ) {
   struct sockaddr_storage remoteaddr;
   socklen_t               addrlen;
   int                     nbytes = 0;
-  char                    buf[256];
+  char                    buf[513];
+  std::vector<int>        recipients;
 
   signal( SIGINT, sigchld_handler );
   signal( SIGQUIT, sigchld_handler );
@@ -209,13 +206,12 @@ void Server::listeningLoop( void ) {
           newFd   = accept( _listeningSocket, (struct sockaddr *)&remoteaddr, &addrlen );
           if ( newFd == -1 )
             perror( "accept" );
-          else {
+          else
             addToPfds( newFd );
-            handleClient( newFd );
-          }
         } else {
           int senderFD = _pfds[i].fd;
-          nbytes       = recv( senderFD, buf, sizeof( buf ), 0 );
+          nbytes       = recv( senderFD, buf, 512, 0 );
+          buf[nbytes] = '\0';
           if ( nbytes <= 0 ) {
             if ( nbytes == 0 ) {
               std::cout << "connection closed from " << senderFD << std::endl;
@@ -225,13 +221,15 @@ void Server::listeningLoop( void ) {
             close( senderFD );
             i -= delFromPfds( senderFD );
           } else {
-            for ( int j = 0; j < (int)_pfds.size(); j++ ) {
-              int destFD = _pfds[j].fd;
-              if ( destFD != _listeningSocket && destFD != senderFD ) {
-                if ( send( destFD, buf, nbytes, 0 ) == -1 )
+            std::string resp = processMsg( _pfds[i].fd, buf, recipients ).c_str();
+            for ( int j = 0; j < (int)recipients.size(); j++ ) {
+              int destFD = recipients[j];
+              if ( destFD != _listeningSocket ) {
+                if ( send( destFD, resp.c_str(), resp.size(), 0 ) == -1 )
                   perror( "send" );
               }
             }
+            recipients.clear();
           }
         }
       }
