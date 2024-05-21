@@ -1,9 +1,12 @@
 #include "Server.hpp"
+
 #include "GenResponse.hpp"
 
 bool Server::_stopServer = false;
 
-Server::Server() {}
+Server::Server() {
+  _pfds.clear();
+}
 
 Server::~Server() {
   clearUsers();
@@ -19,9 +22,8 @@ Server &Server::operator=( Server const &src ) {
   _port            = src._port;
   _password        = src._password;
   _listeningSocket = src._listeningSocket;
-  _server_addr     = src._server_addr;
-  _pfds            = src._pfds;
   _fdSize          = src._fdSize;
+  _pfds            = src._pfds;
   return ( *this );
 }
 
@@ -30,24 +32,6 @@ Server::Server( char const *port, char const *password ) throw( std::exception )
   setPassword( password );
   setupListeningSocket();
   _fdSize = 5;
-  _users.clear();
-  _recipients.clear();
-  /*
-  _passlist.clear();
-  _nicklist.clear();
-  _namelist.clear();
-  _command.clear();
-  _command["PASS"] =  &Server::checkPasswd;
-  _command["NICK"] =  &Server::setNickname;
-  _command["USER"] =  &Server::setUsername;
-  */
-  _command["JOIN"] =  &Server::joinChannel;
-  _command["PART"] =  &Server::partChannel;
-  _command["MODE"] =  &Server::changeModes;
-  _command["KICK"] =  &Server::kickoutUser;
-  _command["TOPIC"] = &Server::changeTopic;
-  _command["INVITE"] = &Server::inviteUser;
-  _command["PRIVMSG"] = &Server::directMsg;
 }
 
 void Server::setPassword( char const *password ) throw( std::exception ) {
@@ -71,8 +55,8 @@ void Server::setPort( char const *port ) throw( std::exception ) {
 
 void Server::serve( void ) throw( std::exception ) {
   if ( listen( _listeningSocket, BACKLOG ) == -1 ) {
-    perror( "listen" );
-    exit( 1 );
+    perror( "listen" );  // Single throw plz!
+    exit( 1 );           // Single throw plz!
   }
   addToPfds( _listeningSocket );
   std::cout << "server: waiting for connections..." << std::endl;
@@ -109,50 +93,6 @@ void Server::setupListeningSocket( void ) throw( std::exception ) {
     throw Server::BindFailException();
 }
 
-std::string Server::processMsg( int fd, std::string msg)
-{
-    std::string resp = "";
-    size_t start = 0;
-    std::string message;
-
-    if (!msg.empty() && msg.find_first_of("\n\r", start) != std::string::npos)
-      message = msg.substr(start, msg.find_first_of("\n\r", start));
-    else
-      message = msg;
-    while (!message.empty())
-    {
-        if (_recipients.empty())
-          _recipients.push_back(fd);
-        std::string word;
-        std::stringstream ss(message);
-        ss >> word;
-        resp = _authenticator.executeCommand(word, message.substr(word.length()), fd);
-        if (_users[fd])
-        {
-            _recipients.clear();
-            for (int i = 0; i < (int)_pfds.size(); i++)
-            {
-              if (_pfds[i].fd != fd && _users[_pfds[i].fd])
-                _recipients.push_back(_pfds[i].fd);
-            }
-            resp = genMsg(_users[fd], "PRIVMSG nuno :" + message + "");
-        }
-        if (!_users[fd] && _authenticator.authenticateUser(_password, fd))
-        {
-            _users[fd] = new User(_authenticator.getUser(fd), _authenticator.getNick(fd));
-            resp += genMsg(RPL_WELCOME, NULL);
-        }
-        start = msg.find_first_of("\n\r\0", start);
-        while (start < msg.size() && (msg[start] == '\n' || msg[start] == '\r'))
-            start++;
-        if (start < msg.size() && msg.find_first_of("\n\r", start) != std::string::npos)
-            message = msg.substr(start, msg.find_first_of("\n\r", start) - start);
-        else
-          break ;
-    }
-    return resp;
-}
-
 void Server::listeningLoop( void ) {
   int                     newFd;
   struct sockaddr_storage remoteaddr;
@@ -164,9 +104,8 @@ void Server::listeningLoop( void ) {
   signal( SIGQUIT, sigchld_handler );
   while ( 1 ) {
     int pollCount = poll( &_pfds[0], _pfds.size(), -1 );
-    if ( pollCount == -1 || _stopServer ) {
-      break;
-    }
+    if ( pollCount == -1 || _stopServer )
+      return;
     for ( int i = 0; i < (int)_pfds.size(); i++ ) {
       if ( _pfds[i].revents & POLL_IN ) {
         if ( _pfds[i].fd == _listeningSocket ) {
@@ -179,7 +118,7 @@ void Server::listeningLoop( void ) {
         } else {
           int senderFD = _pfds[i].fd;
           nbytes       = recv( senderFD, buf, 512, 0 );
-          buf[nbytes] = '\0';
+          buf[nbytes]  = '\0';
           if ( nbytes <= 0 ) {
             if ( nbytes == 0 ) {
               std::cout << "connection closed from " << senderFD << std::endl;
@@ -189,23 +128,17 @@ void Server::listeningLoop( void ) {
             close( senderFD );
             i -= delFromPfds( senderFD );
           } else {
-            std::string resp;
-            if (nbytes >= 512)
-            {
-              while (recv( senderFD, buf, 512, MSG_DONTWAIT) > 0);
-              _recipients.push_back( senderFD );
-              resp = "Message will be ignored due to size constraints\n\0";
+            Messenger msg( _listeningSocket );
+            if ( nbytes >= 512 ) {
+              while ( recv( senderFD, buf, 512, MSG_DONTWAIT ) > 0 )
+                ;
+              msg.tooLargeAMsg( senderFD );
+            } else
+              msg.getValidMsg( _authenticator, _pfds, _users, senderFD, buf );
+            if ( !_users[senderFD] && _authenticator.authenticateUser( _password, senderFD ) ) {
+              _users[senderFD] = new User( _authenticator.getUser( senderFD ), _authenticator.getNick( senderFD ) );
+              msg.LoggedInUser( senderFD );
             }
-            else
-             resp = processMsg( senderFD, buf).c_str();
-            for ( int j = 0; j < (int)_recipients.size(); j++ ) {
-              int destFD = _recipients[j];
-              if ( destFD != _listeningSocket ) {
-                if ( send( destFD, resp.c_str(), resp.size(), 0 ) == -1 )
-                  perror( "send" );
-              }
-            }
-            _recipients.clear();
           }
         }
       }
@@ -213,15 +146,14 @@ void Server::listeningLoop( void ) {
   }
 }
 
-// Add a new file descriptor to the iset
-void Server::addToPfds( int newfd ) {
+void Server::addToPfds( int fd ) {
   pollfd server_fd;
-  server_fd.fd                     = newfd;
-  server_fd.events                 = POLLIN;  // Check ready-to-read
+  server_fd.fd                     = fd;
+  server_fd.events                 = POLLIN;
   server_fd.revents                = 0;
   std::vector<pollfd>::iterator it = _pfds.begin();
   while ( it != _pfds.end() ) {
-    if ( it->fd == newfd )
+    if ( it->fd == fd )
       return;
     ++it;
   }
@@ -229,17 +161,16 @@ void Server::addToPfds( int newfd ) {
   std::cout << "pollserver: new connection" << std::endl;
 }
 
-int Server::delFromPfds( int i ) {
-  // Copy the one from the end over this one
+int Server::delFromPfds( int fd ) {
   std::vector<pollfd>::iterator it = _pfds.begin();
   while ( it != _pfds.end() ) {
-    if ( it->fd == i ) {
+    if ( it->fd == fd ) {
       if ( _users[it->fd] ) {
         std::map<int, User *>::iterator uit = _users.find( it->fd );
         delete uit->second;
         _users.erase( uit );
       }
-      _authenticator.releaseUserInfo( i );
+      _authenticator.releaseUserInfo( fd );
       _pfds.erase( it );
       return ( 1 );
     }
@@ -248,25 +179,42 @@ int Server::delFromPfds( int i ) {
   return 0;
 }
 
-void *get_in_addr( struct sockaddr *sa ) {
-  if ( sa->sa_family == AF_INET ) {
-    return &( ( (struct sockaddr_in *)sa )->sin_addr );
-  }
-  return &( ( (struct sockaddr_in6 *)sa )->sin6_addr );
-}
-
 void Server::clearUsers() {
   std::map<int, User *>::iterator it;
   for ( it = _users.begin(); it != _users.end(); it++ ) {
     delete it->second;
     it->second = NULL;
   }
-  
+
   std::vector<pollfd>::iterator fit = _pfds.begin();
   for ( fit = _pfds.begin(); fit != _pfds.end(); fit++ ) {
-    close(fit->fd);
+    close( fit->fd );
   }
   _users.clear();
+}
+
+std::string Server::getPass( int fd ) {
+  return _authenticator.getPass( fd );
+}
+
+std::string Server::getNick( int fd ) {
+  return _authenticator.getNick( fd );
+}
+
+std::string Server::getUser( int fd ) {
+  return _authenticator.getUser( fd );
+}
+
+std::string Server::executeCommand( const std::string &command, const std::string &message, int fd ) {
+  return _authenticator.executeCommand( command, message, fd );
+}
+
+int Server::authenticateUser( std::string password, int fd ) {
+  return _authenticator.authenticateUser( password, fd );
+}
+
+void Server::releaseUserInfo( int fd ) {
+  _authenticator.releaseUserInfo( fd );
 }
 
 void sigchld_handler( int s ) {
