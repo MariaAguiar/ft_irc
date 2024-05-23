@@ -8,10 +8,11 @@
 #include "ACommand.hpp"
 #include "Authenticator.hpp"
 #include "NickCommand.hpp"
+#include "NoCommand.hpp"
 #include "PassCommand.hpp"
 #include "UserCommand.hpp"
 
-typedef ACommand *( *funcPtr )( Authenticator &authenticator, std::string _args, int fd );
+typedef ACommand *( *funcPtr )( Authenticator *authenticator, std::string _args, int fd );
 
 class CommandFactory {
  private:
@@ -20,7 +21,7 @@ class CommandFactory {
   ~CommandFactory();
   CommandFactory( CommandFactory const &src );
   CommandFactory &operator=( CommandFactory const &src );
-  ACommand       *makeCommand( std::string commandName, Authenticator authenticator, std::string args, int fd );
+  ACommand       *makeCommand( std::string commandName, Authenticator *authenticator, std::string args, int fd );
 };
 
 #endif
