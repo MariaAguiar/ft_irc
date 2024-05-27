@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "User.hpp"
+#include <arpa/inet.h>
 
 class Authenticator {
  private:
@@ -40,8 +41,10 @@ class Authenticator {
   bool                 nickNameExists( int fd, std::string nickName );
 
   bool isValidArg( std::string str );
+  int getFdFromNick( std::string str );
 
   bool authenticateUser( int fd );
+  void setUserIp( int fd );
   void releaseUserInfo( int fd );
   void clearUsers( void );
 };
