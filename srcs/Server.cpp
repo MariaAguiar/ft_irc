@@ -1,4 +1,5 @@
 #include "Server.hpp"
+
 #include "Message.hpp"
 
 bool Server::_stopServer = false;
@@ -22,6 +23,8 @@ Server &Server::operator=( Server const &src ) {
   _port            = src._port;
   _password        = src._password;
   _listeningSocket = src._listeningSocket;
+  _parser          = src._parser;
+  _messenger       = src._messenger;
   _fdSize          = src._fdSize;
   _pfds            = src._pfds;
   return ( *this );
@@ -31,7 +34,9 @@ Server::Server( char const *port, char const *password ) throw( std::exception )
   setPort( port );
   setPassword( password );
   setupListeningSocket();
+  _parser        = Parser();
   _authenticator = new Authenticator( _password.c_str() );
+  _messenger     = Messenger( _listeningSocket );
   _fdSize        = 5;
 }
 
@@ -74,7 +79,6 @@ void Server::setupListeningSocket( void ) throw( std::exception ) {
   for ( p = res; p != NULL; p = p->ai_next ) {
     if ( ( _listeningSocket = socket( p->ai_family, p->ai_socktype, p->ai_protocol ) ) == -1 ) {
       throw Server::SocketSetupException();
-      //continue;
     }
     if ( setsockopt( _listeningSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof( int ) ) == -1 ) {
       throw Server::SocketSetupException();
@@ -82,7 +86,6 @@ void Server::setupListeningSocket( void ) throw( std::exception ) {
     if ( bind( _listeningSocket, p->ai_addr, p->ai_addrlen ) == -1 ) {
       close( _listeningSocket );
       throw Server::BindFailException();
-      //continue;
     }
     break;
   }
@@ -92,12 +95,6 @@ void Server::setupListeningSocket( void ) throw( std::exception ) {
 }
 
 void Server::listeningLoop( void ) {
-  int                     newFd;
-  struct sockaddr_storage remoteaddr;
-  socklen_t               addrlen;
-  int                     nbytes = 0;
-  char                    buf[514];
-
   signal( SIGINT, sigchld_handler );
   signal( SIGQUIT, sigchld_handler );
   while ( 1 ) {
@@ -105,59 +102,80 @@ void Server::listeningLoop( void ) {
     if ( pollCount == -1 || _stopServer )
       return;
     for ( int i = 0; i < (int)_pfds.size(); i++ ) {
-      if ( _pfds[i].revents & POLL_IN ) {
-        if ( _pfds[i].fd == _listeningSocket ) {
-          addrlen = sizeof( remoteaddr );
-          try {
-            newFd   = accept( _listeningSocket, (struct sockaddr *)&remoteaddr, &addrlen );
-            if ( newFd == -1 )
-              throw Server::NewConnectionException();
-              //perror( "accept" );
-            else
-              addToPfds( newFd );
-          }
-          catch ( std::exception &e ) {
-            std::cerr << "Error: " << e.what() << std::endl;
-            continue;
-          }
-        } else {
-          int senderFD = _pfds[i].fd;
-          try {
-            nbytes = recv( senderFD, buf, 512, 0 );
-            buf[nbytes]  = '\0';
-            if ( nbytes < 0 )
-              throw Server::RecvFailException();
-            else if ( nbytes == 0 ) {
-              std::cout << "connection closed from " << senderFD << std::endl;
-              close( senderFD );
-              i -= delFromPfds( senderFD );
-            }
-            else {
-            Messenger msg( _listeningSocket );
-            std::string str;
-            if ( nbytes >= 512 ) {
-              str = buf;
-              memset(buf, '\0', sizeof(buf));
-              while ( recv( senderFD, buf, 512, MSG_DONTWAIT ) > 0 )
-              {
-                str += buf;
-                memset(buf, '\0', sizeof(buf));
-              }
-            }
-            else
-             str = buf;
-            msg.getValidMsg( _authenticator, senderFD, str );
-            if ( _authenticator->authenticateUser( senderFD ) )
-              msg.LoggedInUser( senderFD );
-          }
-          } catch ( std::exception &e ) {
-            std::cerr << "Error: " << e.what() << std::endl;
-            continue;
-          }
-        }
+      try {
+        if ( isServerConnection( i ) )
+          acceptConnection();
+        if ( isServerReceivingMessage( i ) )
+          processMessage( i );
+      } catch ( std::exception &e ) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        continue;
       }
     }
   }
+}
+
+bool Server::isServerConnection( int i ) {
+  return ( _pfds[i].revents & POLL_IN && _pfds[i].fd == _listeningSocket );
+}
+
+bool Server::isServerReceivingMessage( int i ) {
+  return ( _pfds[i].revents & POLL_IN && _pfds[i].fd != _listeningSocket );
+}
+
+void Server::acceptConnection( void ) throw( std::exception ) {
+  int                     newFd;
+  struct sockaddr_storage remoteaddr;
+  socklen_t               addrlen;
+
+  addrlen = sizeof( remoteaddr );
+  newFd   = accept( _listeningSocket, (struct sockaddr *)&remoteaddr, &addrlen );
+  if ( newFd == -1 )
+    throw Server::NewConnectionException();
+  addToPfds( newFd );
+}
+
+void Server::processMessage( int i ) {
+  int                    senderFD = _pfds[i].fd;
+  std::string            str;
+  std::vector<ParsedMsg> parsedMsgs;
+  ACommand              *command;
+  PreparedResponse       pr;
+
+  str        = receiveMessage( i, senderFD );
+  parsedMsgs = _parser.parseMsg( str );
+  for ( std::vector<ParsedMsg>::iterator it = parsedMsgs.begin(); it != parsedMsgs.end(); it++ ) {
+    command = _commandFactory.makeCommand( _authenticator, senderFD, it->commandName, it->args );
+    pr      = command->execute();
+    delete command;
+    _messenger.respond( pr );
+  }
+}
+
+std::string Server::receiveMessage( int i, int senderFD ) throw( std::exception ) {
+  int         nbytes = 0;
+  char        buf[514];
+  std::string message;
+
+  nbytes = recv( senderFD, buf, 512, 0 );
+  if ( nbytes < 0 )
+    throw Server::RecvFailException();
+  if ( nbytes == 0 ) {
+    std::cout << "connection closed from " << senderFD << std::endl;
+    close( senderFD );
+    i -= delFromPfds( senderFD );
+  }
+  buf[nbytes] = '\0';
+  message     = buf;
+  memset( buf, '\0', sizeof( buf ) );
+  while ( nbytes >= 512 ) {
+    nbytes = recv( senderFD, buf, 512, MSG_DONTWAIT );
+    if ( nbytes < 0 )
+      throw Server::RecvFailException();
+    message += buf;
+    memset( buf, '\0', sizeof( buf ) );
+  }
+  return message;
 }
 
 void Server::addToPfds( int fd ) {
@@ -195,10 +213,6 @@ void Server::clearUsers() {
   }
   _pfds.clear();
 }
-
-// std::string Server::executeCommand( const std::string &command, const std::string &message, int fd ) {
-//   return _authenticator->executeCommand( command, message, fd );
-// }
 
 void sigchld_handler( int s ) {
   (void)s;

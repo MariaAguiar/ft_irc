@@ -25,34 +25,23 @@
 
 class Messenger {
  private:
-  Messenger( Messenger const &src );
-  Messenger &operator=( Messenger const &src );
-
   std::vector<int> _recipients;
   std::string      _response;
   int              _listeningSocket;
 
   void respond();
 
-  /*
-  _command["JOIN"] =  &Server::joinChannel;
-  _command["PART"] =  &Server::partChannel;
-  _command["MODE"] =  &Server::changeModes;
-  _command["KICK"] =  &Server::kickoutUser;
-  _command["TOPIC"] = &Server::changeTopic;
-  _command["INVITE"] = &Server::inviteUser;
-  _command["PRIVMSG"] = &Server::directMsg;
-  */
-
  public:
+  Messenger();
   Messenger( int listeningSocket );
   ~Messenger();
+  Messenger( Messenger const &src );
+  Messenger &operator=( Messenger const &src );
 
-  void getValidMsg( Authenticator *auth, int fd, std::string msg );
-  void LoggedInUser( int senderFD );
+  void respond( PreparedResponse pr ) throw( std::exception );
 
   class BadRespondException : public std::exception {
-    public:
+   public:
     virtual const char *what() const throw() {
       return "Bad response.";
     }

@@ -24,6 +24,7 @@
 #include "ACommand.hpp"
 #include "Authenticator.hpp"
 #include "Messenger.hpp"
+#include "Parser.hpp"
 #include "User.hpp"
 
 class User;
@@ -38,39 +39,27 @@ class Server {
   int                 _listeningSocket;
   int                 _fdSize;
   std::vector<pollfd> _pfds;
-  Authenticator      *_authenticator;
+
+  Parser         _parser;
+  Authenticator *_authenticator;
+  CommandFactory _commandFactory;
+  Messenger      _messenger;
 
   void addToPfds( int fd );
   int  delFromPfds( int fd );
   void clearUsers();
 
-  /*
-  std::map<int, User *> _users;
-  std::vector<int>      _recipients;
-  Authenticator         _authenticator;
-  CommandFactory        _commandFactory;
-
-  typedef std::string ( Server::*CommandFunction )( const std::string &, int fd );
-  std::map<std::string, CommandFunction> _command;
-  */
-
   Server();
   Server &operator=( Server const &src );
 
-  void setPort( const char *port ) throw( std::exception );
-  void setPassword( char const *password ) throw( std::exception );
-  void setupListeningSocket( void ) throw( std::exception );
-
-  /*
-  std::string executeCommand(const std::string& command, const std::string& message, int fd);
-  std::string joinChannel( const std::string& message, int fd );
-  std::string partChannel( const std::string& message, int fd );
-  std::string changeModes( const std::string& message, int fd );
-  std::string kickoutUser( const std::string& message, int fd );
-  std::string changeTopic( const std::string& message, int fd );
-  std::string inviteUser( const std::string& message, int fd );
-  std::string directMsg( const std::string& message, int fd );
-  */
+  void        setPort( const char *port ) throw( std::exception );
+  void        setPassword( char const *password ) throw( std::exception );
+  void        setupListeningSocket( void ) throw( std::exception );
+  bool        isServerConnection( int i );
+  bool        isServerReceivingMessage( int i );
+  void        acceptConnection( void ) throw( std::exception );
+  void        processMessage( int i );
+  std::string receiveMessage( int i, int senderFD ) throw( std::exception );
 
  public:
   static bool _stopServer;
@@ -81,8 +70,6 @@ class Server {
   void serve( void ) throw( std::exception );
   void listeningLoop( void );
   int  getListeningSocket() const;
-
-  // std::string executeCommand( const std::string &command, const std::string &message, int fd );
 
   class IncorrectPortException : public std::exception {
    public:
