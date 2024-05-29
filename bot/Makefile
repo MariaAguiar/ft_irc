@@ -2,7 +2,7 @@
 OS=			$(shell uname -s)
 
 ### EXECUTABLE ###
-NAME=		ircserv
+NAME=		ircbot
 
 ### COMPILATION ###
 CC=			c++
@@ -14,23 +14,20 @@ SRCS_PATH=	srcs/
 OBJS_PATH=	objs/
 
 ### SOURCE FILES ###
-SRC_NAME=	main.cpp
-SRCS=		Server.cpp \
-				User.cpp \
-				Authenticator.cpp \
-				Message.cpp \
-				Messenger.cpp \
-				Channel.cpp \
-				ChannelManager.cpp \
-				Parser.cpp \
-				ACommand.cpp \
-				CommandFactory.cpp \
-				commands/NoCommand.cpp \
-				commands/UserCommand.cpp \
-				commands/PassCommand.cpp \
-				commands/NickCommand.cpp \
-				commands/PrivCommand.cpp \
-				commands/JoinCommand.cpp
+SRC_NAME=	chatbot.cpp
+SRCS=		Bot.cpp \
+			BotManager.cpp \
+			ACommand.cpp \
+			CommandFactory.cpp \
+			botcmds/AcceptCommand.cpp \
+			botcmds/AnswerCommand.cpp \
+			botcmds/AskCommand.cpp \
+			botcmds/CloseCommand.cpp \
+			botcmds/InviteCommand.cpp \
+			botcmds/NoCommand.cpp \
+			botcmds/ReplyCommand.cpp \
+			botcmds/ViewCommand.cpp
+
 SRCS_NAME=	$(addprefix $(SRCS_PATH), $(SRC_NAME) $(SRCS))
 ### OBJECT FILES ###
 OBJ_NAME=	$(SRC_NAME:.cpp=.o)
@@ -70,7 +67,7 @@ $(NAME): $(OBJS_PATH) $(OBJS_NAME)
 	@$(GREEN)$(NAME) Program created$(DEFAULT)
 
 $(OBJS_PATH):
-	@mkdir -p $@/commands
+	@mkdir -p $@/botcmds
 
 $(OBJS_BT_PATH):
 	@mkdir -p $@
@@ -84,6 +81,7 @@ fclean: clean ## removes object files and binary
 	@$(RED)$(NAME) Program removed$(DEFAULT)
 
 re: fclean all ## recompiles binary
+
 
 ### PHONY RULE ###
 .PHONY:	all help bonus clean fclean re
