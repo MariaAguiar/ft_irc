@@ -41,7 +41,6 @@ class Channel {
   void             removeUser( int _userFD );
   void             removeOperator( int _userFD );
 
-  void setOperator( int user );  // it will be more like void addOperator( User *user );
   void setInviteOnly( bool inviteOnly );
   void setTopicProtected( bool topicProtected );
   void setTopic( std::string topic );
