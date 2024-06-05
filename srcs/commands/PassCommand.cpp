@@ -27,13 +27,16 @@ PreparedResponse PassCommand::execute() const {
     return serverResponse( INVALIDAUTHELEM, "Password" );
 
   User *user = _userManager->getUser( _userFD );
-  if ( user == NULL ) {
+  if ( user == NULL && str == _userManager->getServerPass() ) {
     user = new User();
     if ( str == _userManager->getServerPass() )
       user->setPassword( true );
     _userManager->addUser( _userFD, user );
     return serverResponse( UPD_AUTHELEM, "Password" );
-  } else if ( user->getLoggedIn() )
+  }
+  else if ( str != _userManager->getServerPass() )
+    return serverResponse( ERR_PASSWDMISMATCH, "" );
+  else if ( user->getLoggedIn() )
     return serverResponse( ERR_ALREADYREGISTERED, "" );
 
   PreparedResponse pr;
@@ -42,7 +45,7 @@ PreparedResponse PassCommand::execute() const {
     pr = serverResponse( UPD_AUTHELEM, "Password" );
   }
   if ( _userManager->authenticateUser( _userFD ) ) {
-    pr.response += genServerMsg( RPL_WELCOME, _userManager->getNick( _userFD ), "" );
+    pr.allresponses[genServerMsg( RPL_WELCOME, _userManager->getNick( _userFD ), "" )].push_back( _userFD );
   }
   return pr;
 }
