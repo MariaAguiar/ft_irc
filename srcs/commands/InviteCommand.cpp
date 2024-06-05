@@ -28,7 +28,7 @@ PreparedResponse InviteCommand::execute() const {
   if ( inviteeNick.empty() || channelName.empty() || !invalidArg.empty() )
     return serverResponse( ERR_NEEDMOREPARAMS, "INVITE" );
 
-  if ( !_userManager->nickNameExists( _userFD, inviteeNick ) )
+  if ( !_userManager->nickNameExists( inviteeNick ) )
     return serverResponse( ERR_NOSUCHNICK, channelName );
 
   int inviteeFD = _userManager->getFdFromNick( inviteeNick );
@@ -40,7 +40,7 @@ PreparedResponse InviteCommand::execute() const {
 
   if ( !_channelManager->getChannel( channelName )->isUser( _userFD ) &&
        !_channelManager->getChannel( channelName )->isOperator( _userFD ) )
-    return serverResponse( ERR_USERNOTINCHANNEL, "INVITE" );
+    return serverResponse( ERR_USERNOTINCHANNEL, channelName );
 
   if ( _channelManager->getChannel( channelName )->isUser( inviteeFD ) ||
        _channelManager->getChannel( channelName )->isOperator( inviteeFD ) )

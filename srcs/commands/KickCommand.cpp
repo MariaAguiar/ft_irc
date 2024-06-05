@@ -23,13 +23,13 @@ PreparedResponse KickCommand::execute() const {
 
   std::stringstream argsStream( _args );
   std::string       kickedNick, channelName, invalidArg;
-  argsStream >> kickedNick >> channelName >> invalidArg;
+  argsStream >> channelName >> kickedNick >> invalidArg;
 
   if ( kickedNick.empty() || channelName.empty() || !invalidArg.empty() )
     return serverResponse( ERR_NEEDMOREPARAMS, "KICK" );
 
-  if ( !_userManager->nickNameExists( _userFD, kickedNick ) )
-    return serverResponse( ERR_NOSUCHNICK, channelName );
+  if ( !_userManager->nickNameExists( kickedNick ))
+    return serverResponse( ERR_NOSUCHNICK, "KICK" );
 
   int kickedFD = _userManager->getFdFromNick( kickedNick );
   if ( !_userManager->isLoggedIn( kickedFD ) )
@@ -38,9 +38,8 @@ PreparedResponse KickCommand::execute() const {
   if ( !_channelManager->channelExists( channelName ) )
     return serverResponse( ERR_NOSUCHCHANNEL, "KICK" );
 
-  if ( !_channelManager->getChannel( channelName )->isUser( _userFD ) &&
-       !_channelManager->getChannel( channelName )->isOperator( _userFD ) )
-    return serverResponse( ERR_USERNOTINCHANNEL, "KICK" );
+  if ( !_channelManager->getChannel( channelName )->isOperator( _userFD ) )
+    return serverResponse( ERR_CHANOPRIVSNEEDED, "KICK" );
 
   if ( !_channelManager->getChannel( channelName )->isUser( kickedFD ) &&
        !_channelManager->getChannel( channelName )->isOperator( kickedFD ) )
@@ -51,6 +50,6 @@ PreparedResponse KickCommand::execute() const {
 
   PreparedResponse pr = PreparedResponse();
   pr.recipients.push_back( kickedFD );
-  pr.response = genUserMsg( _userManager->getUser( _userFD ), "KICK" + _args );
+  pr.response = genUserMsg( _userManager->getUser( _userFD ), "KICK " + kickedNick );
   return pr;
 }
