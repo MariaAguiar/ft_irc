@@ -93,6 +93,31 @@ unsigned int Channel::getMaxUsers( void ) {
   return _maxUsers;
 }
 
+std::string Channel::getModes( void ) {
+  std::string modes = "";
+  if ( _inviteOnly )
+    modes += "i";
+  if ( _topicProtected )
+    modes += "t";
+  if ( _password != "" )
+    modes += "k";
+  if ( _maxUsers != 0 )
+    modes += "l";
+  return modes;
+}
+
+std::string Channel::getModeParams( void ) {
+  std::string params = "";
+  std::stringstream ss;
+  if ( _password != "" )
+    params += " " + _password;
+  if ( _maxUsers != 0 ){
+    ss << _maxUsers;
+    params += " " + ss.str();
+  }
+  return params;
+}
+
 void Channel::addUser( int _userFD ) {
   if ( isUser( _userFD ) )
     return;
