@@ -29,14 +29,14 @@ PreparedResponse InviteCommand::execute() const {
     return serverResponse( ERR_NEEDMOREPARAMS, "INVITE" );
 
   if ( !_userManager->nickNameExists( inviteeNick ) )
-    return serverResponse( ERR_NOSUCHNICK, channelName );
+    return serverResponse( ERR_NOSUCHNICK, inviteeNick );
 
   int inviteeFD = _userManager->getFdFromNick( inviteeNick );
   if ( !_userManager->isLoggedIn( inviteeFD ) )
     return serverResponse( ERR_TARGETNOTAUTH, "" );
 
   if ( !_channelManager->channelExists( channelName ) )
-    return serverResponse( ERR_NOSUCHCHANNEL, "INVITE" );
+    return serverResponse( ERR_NOSUCHCHANNEL, channelName );
 
   if ( !_channelManager->getChannel( channelName )->isUser( _userFD ) &&
        !_channelManager->getChannel( channelName )->isOperator( _userFD ) )
@@ -46,14 +46,15 @@ PreparedResponse InviteCommand::execute() const {
        _channelManager->getChannel( channelName )->isOperator( inviteeFD ) )
     return serverResponse( ERR_USERONCHANNEL, _userManager->getNick( inviteeFD ) );
 
-  if ( _channelManager->getChannel( channelName )->isInvitee( inviteeFD ) )
+  if ( _channelManager->getChannel( channelName )->isOperator( _userFD ) \
+  &&  _channelManager->getChannel( channelName )->isInvitee( inviteeFD ) )
     return serverResponse( ERR_TARGETALREADYINV, "" );
 
-  _channelManager->getChannel( channelName )->addInvitee( inviteeFD );
+  if ( _channelManager->getChannel( channelName )->isOperator( _userFD ) )
+    _channelManager->getChannel( channelName )->addInvitee( inviteeFD );
+  else
+    return serverResponse( ERR_CHANOPRIVSNEEDED, "INVITE" );
   PreparedResponse pr = PreparedResponse();
   pr.allresponses[genUserMsg( _userManager->getUser( _userFD ), "INVITE" + _args )].push_back( inviteeFD );
-  std::string answer = genUserMsg( _userManager->getUser( _userFD ), "PRIVMSG " + _userManager->getNick( _userFD ) \
-  + ": " + _userManager->getNick( _userFD ) + " invited you to channel " + channelName );
-  pr.allresponses[answer] = _channelManager->getChannel( channelName)->getAllMembersSansUser( _userFD );
   return pr;
 }

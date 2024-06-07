@@ -30,7 +30,7 @@ PreparedResponse JoinCommand::execute() const {
     return serverResponse( ERR_NEEDMOREPARAMS, "JOIN" );
 
   if ( channelName[0] != '#' )
-    return serverResponse( ERR_NOSUCHCHANNEL, "JOIN" );
+    return serverResponse( ERR_NOSUCHCHANNEL, channelName );
 
   if ( !_channelManager->channelExists( channelName ) ) {
     Channel *channel = new Channel( channelName );
@@ -53,11 +53,13 @@ PreparedResponse JoinCommand::execute() const {
   if ( _channelManager->getChannel( channelName )->isUser( _userFD ) || _channelManager->getChannel( channelName )->isOperator( _userFD ) )
     return serverResponse( ERR_USERONCHANNEL, _userManager->getNick( _userFD ) );
 
+  if ( _channelManager->getChannel( channelName )->getModes().find("l") != std::string::npos \
+  && _channelManager->getChannel( channelName )->getMaxUsers() == _channelManager->getChannel( channelName )->getAllMembers().size() )
+    return serverResponse( ERR_CHANNELISFULL, channelName );
   _channelManager->getChannel( channelName )->addUser( _userFD );
   if (_channelManager->getChannel( channelName )->isInvitee( _userFD ))
     _channelManager->getChannel( channelName )->removeInvitee( _userFD );
-  pr.allresponses[genUserMsg( _userManager->getUser( _userFD ), "JOIN " + channelName )].push_back( _userFD );
-  std::string answer = genUserMsg( _userManager->getUser( _userFD ), "PRIVMSG " + channelName + " :" + _userManager->getNick( _userFD ) + " just joined in!");
-  pr.allresponses[answer] = _channelManager->getChannel( channelName)->getAllMembersSansUser( _userFD );
+  pr.allresponses[genUserMsg( _userManager->getUser( _userFD ), "JOIN " + channelName )] \
+  = _channelManager->getChannel( channelName)->getAllMembers();
   return pr;
 }
