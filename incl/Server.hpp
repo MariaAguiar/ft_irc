@@ -36,11 +36,12 @@ class UserManager;
 
 class Server {
  private:
-  const char         *_port;
-  std::string         _password;
-  int                 _listeningSocket;
-  int                 _fdSize;
-  std::vector<pollfd> _pfds;
+  const char                *_port;
+  std::string                _password;
+  int                        _listeningSocket;
+  int                        _fdSize;
+  std::vector<pollfd>        _pfds;
+  std::map<int, std::string> _unfinishedMsgs;
 
   Parser         _parser;
   CommandFactory _commandFactory;
@@ -61,6 +62,7 @@ class Server {
   void        acceptConnection( void ) throw( std::exception );
   void        processMessage( int i );
   UnparsedMsg receiveMessage( int i, int senderFD ) throw( std::exception );
+  UnparsedMsg composeUnfinishedMessage( int senderFD, UnparsedMsg message );
 
  public:
   static bool _stopServer;
